@@ -4,17 +4,18 @@ import numpy as np
 import streamlit as st
 import yfinance as yf
 from datetime import datetime
-
 import os
-import sqlite3
+
+# --- CONEXIÓN GLOBAL SEGURA A LA BASE DE DATOS ---
+def get_connection():
+    """Garantiza que todas las funciones busquen la DB en el directorio correcto en Streamlit Cloud"""
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DB_PATH = os.path.join(BASE_DIR, "portafolio.db")
+    return sqlite3.connect(DB_PATH)
 
 # 1. Conexión, creación y actualización de tablas en SQLite
 def init_db():
-    # Garantiza que SQLite encuentre o cree 'portafolio.db' en el mismo directorio que app.py
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    DB_PATH = os.path.join(BASE_DIR, "portafolio.db")
-
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     c = conn.cursor()
     
     # --- Tabla Principal de Transacciones ---
@@ -88,7 +89,7 @@ init_db()
 
 # --- FUNCIÓN DE AUDITORÍA ---
 def registrar_auditoria(usuario, accion, detalles):
-    conn = sqlite3.connect("portafolio.db")
+    conn = get_connection()
     c = conn.cursor()
     fecha_hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     c.execute(
@@ -100,7 +101,7 @@ def registrar_auditoria(usuario, accion, detalles):
 
 # --- FUNCIONES DE CÁLCULO DE CAPITAL ---
 def obtener_capital_disponible():
-    conn = sqlite3.connect("portafolio.db")
+    conn = get_connection()
     
     df_movs = pd.read_sql_query("SELECT tipo, monto FROM movimientos_capital", conn)
     ingresos = df_movs[df_movs['tipo'].isin(['Depósito/Fondeo', 'Cobro de Dividendo'])]['monto'].sum() if not df_movs.empty else 0.0
@@ -224,7 +225,7 @@ if not st.session_state.logged_in:
         submitted = st.form_submit_button("Entrar")
         
         if submitted:
-            conn = sqlite3.connect("portafolio.db")
+            conn = get_connection()
             c = conn.cursor()
             c.execute("SELECT password, rol FROM usuarios WHERE username = ?", (user_input,))
             resultado = c.fetchone()
@@ -264,7 +265,8 @@ if st.session_state.rol == "Admin":
 vista = st.sidebar.radio("Navegación", nav_opciones)
 st.sidebar.markdown("---")
 
-capital_disponible, _ = obtener_capital_disponible()
+# Obtenemos también el flujo_neto_manual para calcular los porcentajes más adelante
+capital_disponible, flujo_neto_manual = obtener_capital_disponible()
 
 # GESTIÓN DE PERMISOS SEGÚN EL ROL
 if st.session_state.rol in ["Admin", "Analista"] and vista in ["Posiciones Activas", "Resumen Mensual", "Historial de Ventas", "Gestión de Capital"]:
@@ -293,7 +295,7 @@ if st.session_state.rol in ["Admin", "Analista"] and vista in ["Posiciones Activ
                 else:
                     monto_total_compra = cantidad * precio_compra
                     
-                    conn = sqlite3.connect("portafolio.db")
+                    conn = get_connection()
                     c = conn.cursor()
                     c.execute(
                         "INSERT INTO transacciones (empresa, ticker, cantidad, fecha_compra, precio_compra, fecha_venta, precio_venta) VALUES (?, ?, ?, ?, ?, NULL, NULL)",
@@ -313,7 +315,7 @@ if st.session_state.rol in ["Admin", "Analista"] and vista in ["Posiciones Activ
     # CERRAR POSICIÓN
     elif accion == "Cerrar Posición (Vender)":
         st.sidebar.header("Cerrar Posición (Vender)")
-        conn = sqlite3.connect("portafolio.db")
+        conn = get_connection()
         df_activas_list = pd.read_sql_query("SELECT id, empresa, ticker, cantidad, precio_compra, fecha_compra FROM transacciones WHERE fecha_venta IS NULL", conn)
         conn.close()
 
@@ -338,7 +340,7 @@ if st.session_state.rol in ["Admin", "Analista"] and vista in ["Posiciones Activ
                         
                         detalles_venta = f"Venta ID {id_transaccion}: {fila_orig['empresa']} ({fila_orig['ticker']}) | Vendida a: ${precio_venta} | Capital Liberado: ${total_recuperado:.2f}"
 
-                        conn = sqlite3.connect("portafolio.db")
+                        conn = get_connection()
                         c = conn.cursor()
                         c.execute("UPDATE transacciones SET fecha_venta = ?, precio_venta = ? WHERE id = ?", (str(fecha_venta), precio_venta, id_transaccion))
                         conn.commit()
@@ -370,7 +372,7 @@ if st.session_state.rol in ["Admin", "Analista"] and vista in ["Posiciones Activ
                 if monto_mov is None or fecha_mov is None:
                     st.error("Completa el monto y la fecha.")
                 else:
-                    conn = sqlite3.connect("portafolio.db")
+                    conn = get_connection()
                     c = conn.cursor()
                     c.execute(
                         "INSERT INTO movimientos_capital (fecha, tipo, monto, detalles) VALUES (?, ?, ?, ?)",
@@ -388,7 +390,7 @@ if st.session_state.rol in ["Admin", "Analista"] and vista in ["Posiciones Activ
         st.sidebar.header("Eliminar Registro")
         st.sidebar.warning("⚠️ Acción irreversible.")
         
-        conn = sqlite3.connect("portafolio.db")
+        conn = get_connection()
         df_all_list = pd.read_sql_query("SELECT * FROM transacciones", conn)
         conn.close()
 
@@ -411,7 +413,7 @@ if st.session_state.rol in ["Admin", "Analista"] and vista in ["Posiciones Activ
                         fila_elim = df_all_list[df_all_list["id"] == id_eliminar].iloc[0]
                         detalles_elim = f"Eliminado ID {id_eliminar}: {fila_elim['empresa']} ({fila_elim['ticker']})"
                         
-                        conn = sqlite3.connect("portafolio.db")
+                        conn = get_connection()
                         c = conn.cursor()
                         c.execute("DELETE FROM transacciones WHERE id = ?", (id_eliminar,))
                         conn.commit()
@@ -437,7 +439,7 @@ if vista == "Posiciones Activas":
         if st.button("🔄 Actualizar Precios"):
             st.rerun()
 
-    conn = sqlite3.connect("portafolio.db")
+    conn = get_connection()
     df_activas = pd.read_sql_query("SELECT * FROM transacciones WHERE fecha_venta IS NULL", conn)
     conn.close()
 
@@ -476,13 +478,27 @@ if vista == "Posiciones Activas":
                     ganancias_pct.append(np.nan)
                     ganancias_usd.append(np.nan)
 
-        # --- TARJETAS DE MÉTRICAS GLOBALES ---
+        # --- TARJETAS DE MÉTRICAS GLOBALES CON PORCENTAJE ---
         balance_cuenta_total = capital_disponible + total_capital_actual
+        
+        # Calcular % de ganancia de las inversiones activas (respecto al costo de comprarlas)
+        if total_capital_gestion > 0:
+            pct_ganancia_inversiones = ((total_capital_actual - total_capital_gestion) / total_capital_gestion) * 100
+        else:
+            pct_ganancia_inversiones = 0.0
+            
+        # Calcular % de ganancia del portafolio total (respecto al dinero neto fondeado a la cuenta)
+        if flujo_neto_manual > 0:
+            pct_ganancia_total = ((balance_cuenta_total - flujo_neto_manual) / flujo_neto_manual) * 100
+        else:
+            pct_ganancia_total = 0.0
         
         col_m1, col_m2, col_m3 = st.columns(3)
         col_m1.metric("Capital Libre (Poder de Compra)", f"${capital_disponible:,.2f}")
-        col_m2.metric("Valor en Inversiones (Activas)", f"${total_capital_actual:,.2f}")
-        col_m3.metric("Balance Total (Libre + Inversiones)", f"${balance_cuenta_total:,.2f}")
+        
+        # El parámetro delta añade el porcentaje visual con flechas rojas/verdes
+        col_m2.metric("Valor en Inversiones (Activas)", f"${total_capital_actual:,.2f}", f"{pct_ganancia_inversiones:+.2f}%")
+        col_m3.metric("Balance Total (Libre + Inversiones)", f"${balance_cuenta_total:,.2f}", f"{pct_ganancia_total:+.2f}%")
         st.markdown("---")
         
         # --- TABLA DE POSICIONES ---
@@ -523,7 +539,7 @@ elif vista == "Gestión de Capital":
     st.subheader("🏛️ Gestión y Flujo de Capital")
     st.markdown("Administra el dinero líquido de tu portafolio.")
     
-    conn = sqlite3.connect("portafolio.db")
+    conn = get_connection()
     df_movs = pd.read_sql_query("SELECT id, fecha, tipo, monto, detalles FROM movimientos_capital ORDER BY id DESC", conn)
     conn.close()
 
@@ -555,7 +571,7 @@ elif vista == "Gestión de Capital":
 elif vista == "Resumen Mensual":
     st.subheader("📅 Resumen Mensual de Crecimiento y Ganancias")
     
-    conn = sqlite3.connect("portafolio.db")
+    conn = get_connection()
     df_all = pd.read_sql_query("SELECT * FROM transacciones", conn)
     conn.close()
 
@@ -668,7 +684,7 @@ elif vista == "Resumen Mensual":
 
 elif vista == "Historial de Ventas":
     st.subheader("🔴 Historial de Ventas (Detalle de Operaciones)")
-    conn = sqlite3.connect("portafolio.db")
+    conn = get_connection()
     df_vendidas = pd.read_sql_query("SELECT * FROM transacciones WHERE fecha_venta IS NOT NULL", conn)
     conn.close()
 
@@ -707,7 +723,7 @@ elif vista == "Registro de Auditoría":
     st.subheader("🛡️ Registro de Auditoría del Sistema")
     st.markdown("Historial detallado de todas las acciones operativas realizadas.")
     
-    conn = sqlite3.connect("portafolio.db")
+    conn = get_connection()
     df_audit = pd.read_sql_query("SELECT id, fecha_hora, usuario, accion, detalles FROM auditoria ORDER BY id DESC", conn)
     conn.close()
 
@@ -721,7 +737,7 @@ elif vista == "Registro de Auditoría":
 elif vista == "Gestión de Usuarios":
     st.subheader("👥 Gestión de Usuarios")
     
-    conn = sqlite3.connect("portafolio.db")
+    conn = get_connection()
     df_users = pd.read_sql_query("SELECT username, rol FROM usuarios", conn)
     conn.close()
 
@@ -740,7 +756,7 @@ elif vista == "Gestión de Usuarios":
                 elif nuevo_user in df_users['username'].values:
                     st.error("El nombre de usuario ya existe.")
                 else:
-                    conn = sqlite3.connect("portafolio.db")
+                    conn = get_connection()
                     c = conn.cursor()
                     c.execute("INSERT INTO usuarios (username, password, rol) VALUES (?, ?, ?)", (nuevo_user, nuevo_pass, nuevo_rol))
                     conn.commit()
@@ -759,7 +775,7 @@ elif vista == "Gestión de Usuarios":
                 if not nueva_pass:
                     st.error("Ingresa una nueva contraseña.")
                 else:
-                    conn = sqlite3.connect("portafolio.db")
+                    conn = get_connection()
                     c = conn.cursor()
                     c.execute("UPDATE usuarios SET password = ? WHERE username = ?", (nueva_pass, user_mod))
                     conn.commit()
@@ -777,7 +793,7 @@ elif vista == "Gestión de Usuarios":
                 if user_del == st.session_state.username:
                     st.error("No puedes eliminar tu propio usuario actual.")
                 else:
-                    conn = sqlite3.connect("portafolio.db")
+                    conn = get_connection()
                     c = conn.cursor()
                     c.execute("DELETE FROM usuarios WHERE username = ?", (user_del,))
                     conn.commit()

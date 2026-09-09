@@ -496,7 +496,7 @@ if vista == "Posiciones Activas":
         col_m1, col_m2, col_m3 = st.columns(3)
         col_m1.metric("Capital Libre (Poder de Compra)", f"${capital_disponible:,.2f}")
         col_m2.metric("Valor en Inversiones (Activas)", f"${total_capital_actual:,.2f}", f"{pct_ganancia_inversiones:+.2f}%")
-        col_m3.metric("Balance Total (Libre + Inversiones)", f"${balance_cuenta_total:,.2f}")
+        col_m3.metric("Balance Total (Libre + Inversiones + test)", f"${balance_cuenta_total:,.2f}")
         st.markdown("---")
         
         # Asignamos las listas calculadas al dataframe

@@ -495,20 +495,61 @@ if vista == "Posiciones Activas":
         
         col_m1, col_m2, col_m3 = st.columns(3)
         col_m1.metric("Capital Libre (Poder de Compra)", f"${capital_disponible:,.2f}")
-        
-        # El parámetro delta añade el porcentaje visual con flechas rojas/verdes
         col_m2.metric("Valor en Inversiones (Activas)", f"${total_capital_actual:,.2f}", f"{pct_ganancia_inversiones:+.2f}%")
-        col_m3.metric("Balance Total (Libre + Inversiones)", f"${balance_cuenta_total:,.2f}")
+        col_m3.metric("Balance Total (Libre + Inversiones)", f"${balance_cuenta_total:,.2f}", f"{pct_ganancia_total:+.2f}%")
         st.markdown("---")
         
-        # --- TABLA DE POSICIONES ---
+        # Asignamos las listas calculadas al dataframe
         df_activas["Precio Actual"] = precios_act
         df_activas["Valor Posición ($)"] = valores_pos
+        df_activas["Capital Invertido"] = df_activas["precio_compra"] * df_activas["cantidad"]
         df_activas["STOCH 1D (%K/%D)"] = stochs_1d
         df_activas["STOCH 1S (%K/%D)"] = stochs_1s
         df_activas["Ganancia %"] = ganancias_pct
         df_activas["Ganancia ($)"] = ganancias_usd
 
+        # ==========================================
+        # NUEVO: RESUMEN CONSOLIDADO POR EMPRESA
+        # ==========================================
+        st.markdown("#### 📊 Resumen Consolidado por Activo")
+        
+        # Agrupamos por empresa y ticker sumando las cantidades e inversiones
+        df_cons = df_activas.groupby(['empresa', 'ticker']).agg(
+            Cantidad_Total=('cantidad', 'sum'),
+            Total_Invertido=('Capital Invertido', 'sum'),
+            Valor_Actual=('Valor Posición ($)', lambda x: x.sum(min_count=1)), # min_count evita que los N/D se sumen como 0
+            Precio_Actual=('Precio Actual', 'first')
+        ).reset_index()
+        
+        # Calculamos promedios y ganancias del consolidado
+        df_cons['Precio Prom. Compra'] = df_cons['Total_Invertido'] / df_cons['Cantidad_Total']
+        df_cons['Ganancia ($)'] = df_cons['Valor_Actual'] - df_cons['Total_Invertido']
+        df_cons['Ganancia %'] = (df_cons['Ganancia ($)'] / df_cons['Total_Invertido']) * 100
+        
+        # Ordenamos las columnas y renombramos para presentación
+        df_cons_show = df_cons[['empresa', 'ticker', 'Cantidad_Total', 'Precio Prom. Compra', 'Precio_Actual', 'Total_Invertido', 'Valor_Actual', 'Ganancia %', 'Ganancia ($)']].rename(columns={
+            'empresa': 'Empresa', 'ticker': 'Ticker', 'Cantidad_Total': 'Cantidad Total',
+            'Precio_Actual': 'Precio Actual', 'Total_Invertido': 'Total Invertido', 'Valor_Actual': 'Valor Actual'
+        })
+        
+        format_cons = {
+            "Cantidad Total": "{:,.6f}",
+            "Precio Prom. Compra": lambda x: "N/D" if pd.isna(x) else (f"${x:,.4f}" if x < 1 else f"${x:,.2f}"),
+            "Precio Actual": lambda x: "N/D" if pd.isna(x) else (f"${x:,.4f}" if x < 1 else f"${x:,.2f}"),
+            "Total Invertido": lambda x: "N/D" if pd.isna(x) else f"${x:,.2f}",
+            "Valor Actual": lambda x: "N/D" if pd.isna(x) else f"${x:,.2f}",
+            "Ganancia %": lambda x: "N/D" if pd.isna(x) else f"{x:+.2f}%",
+            "Ganancia ($)": lambda x: "N/D" if pd.isna(x) else f"${x:+.2f}"
+        }
+        
+        styled_cons = df_cons_show.style.format(format_cons).apply(color_ganancia_usd, subset=['Ganancia ($)'])
+        st.dataframe(styled_cons, use_container_width=True)
+        
+        st.markdown("#### 📝 Detalle de Transacciones (Lotes Individuales)")
+
+        # ==========================================
+        # TABLA ORIGINAL DE POSICIONES (DETALLE)
+        # ==========================================
         columnas_activas = [
             "empresa", "ticker", "cantidad", "Precio Actual", "Valor Posición ($)", 
             "STOCH 1D (%K/%D)", "STOCH 1S (%K/%D)", "Ganancia %", "Ganancia ($)", 
@@ -520,7 +561,6 @@ if vista == "Posiciones Activas":
             "fecha_compra": "Fecha Compra", "precio_compra": "Precio Compra ($)"
         })
         
-        # Diccionario de formato visual. Transforma los flotantes para la UI sin afectar el orden
         format_activas = {
             "Precio Actual": lambda x: "N/D" if pd.isna(x) else (f"${x:,.4f}" if x < 1 else f"${x:,.2f}"),
             "Valor Posición ($)": lambda x: "N/D" if pd.isna(x) else f"${x:,.2f}",

@@ -5,9 +5,16 @@ import streamlit as st
 import yfinance as yf
 from datetime import datetime
 
+import os
+import sqlite3
+
 # 1. Conexión, creación y actualización de tablas en SQLite
 def init_db():
-    conn = sqlite3.connect("portafolio.db")
+    # Garantiza que SQLite encuentre o cree 'portafolio.db' en el mismo directorio que app.py
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DB_PATH = os.path.join(BASE_DIR, "portafolio.db")
+
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
     # --- Tabla Principal de Transacciones ---

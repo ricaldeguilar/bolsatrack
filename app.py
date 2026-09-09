@@ -498,7 +498,7 @@ if vista == "Posiciones Activas":
         
         # El parámetro delta añade el porcentaje visual con flechas rojas/verdes
         col_m2.metric("Valor en Inversiones (Activas)", f"${total_capital_actual:,.2f}", f"{pct_ganancia_inversiones:+.2f}%")
-        col_m3.metric("Balance Total (Libre + Inversiones)", f"${balance_cuenta_total:,.2f}", f"{pct_ganancia_total:+.2f}%")
+        col_m3.metric("Balance Total (Libre + Inversiones)", f"${balance_cuenta_total:,.2f}")
         st.markdown("---")
         
         # --- TABLA DE POSICIONES ---
